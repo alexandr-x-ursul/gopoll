@@ -7,10 +7,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync"
 )
 
 var polls map[string]Poll
 var seqPoll int
+var mutex sync.Mutex
 
 // Poll structure stores info about a specific poll
 type Poll struct {
@@ -39,7 +41,9 @@ func getPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func nextPollID() string {
+	mutex.Lock()
 	seqPoll++
+	mutex.Unlock()
 	return fmt.Sprint(seqPoll)
 }
 
@@ -66,11 +70,29 @@ func createPoll(w http.ResponseWriter, r *http.Request) {
 func deletePoll(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
+	mutex.Lock()
+	defer mutex.Unlock()
 	if _, ok := polls[id]; !ok {
 		fmt.Fprintf(w, "No such poll found\n")
 		return
 	}
 	delete(polls, id)
+}
+
+func vote(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	mutex.Lock()
+	defer mutex.Unlock()
+	poll, ok := polls[vars["id"]]
+	if !ok {
+		fmt.Fprintf(w, "No such poll found.\n")
+		return
+	}
+	if _, ok := poll.Answers[vars["answer"]]; !ok {
+		fmt.Fprintf(w, "No such answer found.\n")
+		return
+	}
+	poll.Answers[vars["answer"]]++
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -99,5 +121,6 @@ func main() {
 	router.HandleFunc("/api/poll", createPoll).Methods("POST")
 	router.HandleFunc("/api/poll/{id}", deletePoll).Methods("DELETE")
 	router.HandleFunc("/api/poll/{id}", getPoll).Methods("GET")
+	router.HandleFunc("/api/poll/{id}/{answer}", vote).Methods("POST")
 	log.Fatal(http.ListenAndServe("localhost:8080", router))
 }
