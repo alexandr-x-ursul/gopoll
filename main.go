@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
@@ -28,7 +27,6 @@ type NewPoll struct {
 
 // Vote is a structure used for posting a vote on a poll
 type Vote struct {
-	ID     string `json:"id"`
 	Answer string `json:"answer"`
 }
 
@@ -54,13 +52,13 @@ func nextPollID() string {
 }
 
 func createPoll(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		fmt.Fprint(w, err)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var newPoll NewPoll
+	if err := decoder.Decode(&newPoll); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	var newPoll NewPoll
-	json.Unmarshal(body, &newPoll)
 	resultPoll := Poll{
 		Question: newPoll.Question,
 		Answers:  make(map[string]int),
@@ -79,7 +77,7 @@ func deletePoll(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	if _, ok := polls[id]; !ok {
-		http.Error(w, "No such poll found.\n", 400)
+		http.Error(w, "No such poll found.", 400)
 		return
 	}
 	delete(polls, id)
@@ -89,18 +87,18 @@ func vote(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	mutex.Lock()
 	defer mutex.Unlock()
+	var vote Vote
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&vote); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	poll, ok := polls[vars["id"]]
 	if !ok {
-		http.Error(w, "No such poll found.\n", 400)
+		http.Error(w, "No such poll found.", 400)
 		return
 	}
-	var vote Vote
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Invalid Body.", 400)
-		return
-	}
-	json.Unmarshal(body, &vote)
 	if _, ok := poll.Answers[vote.Answer]; !ok {
 		fmt.Fprintf(w, "No such answer found.\n")
 		return
