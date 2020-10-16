@@ -26,6 +26,12 @@ type NewPoll struct {
 	Answers  []string `json:"answers"`
 }
 
+// Vote is a structure used for posting a vote on a poll
+type Vote struct {
+	ID     string `json:"id"`
+	Answer string `json:"answer"`
+}
+
 func getPolls(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(polls)
 }
@@ -73,7 +79,7 @@ func deletePoll(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	if _, ok := polls[id]; !ok {
-		fmt.Fprintf(w, "No such poll found\n")
+		http.Error(w, "No such poll found.\n", 400)
 		return
 	}
 	delete(polls, id)
@@ -85,14 +91,21 @@ func vote(w http.ResponseWriter, r *http.Request) {
 	defer mutex.Unlock()
 	poll, ok := polls[vars["id"]]
 	if !ok {
-		fmt.Fprintf(w, "No such poll found.\n")
+		http.Error(w, "No such poll found.\n", 400)
 		return
 	}
-	if _, ok := poll.Answers[vars["answer"]]; !ok {
+	var vote Vote
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Invalid Body.", 400)
+		return
+	}
+	json.Unmarshal(body, &vote)
+	if _, ok := poll.Answers[vote.Answer]; !ok {
 		fmt.Fprintf(w, "No such answer found.\n")
 		return
 	}
-	poll.Answers[vars["answer"]]++
+	poll.Answers[vote.Answer]++
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +134,6 @@ func main() {
 	router.HandleFunc("/api/poll", createPoll).Methods("POST")
 	router.HandleFunc("/api/poll/{id}", deletePoll).Methods("DELETE")
 	router.HandleFunc("/api/poll/{id}", getPoll).Methods("GET")
-	router.HandleFunc("/api/poll/{id}/{answer}", vote).Methods("POST")
+	router.HandleFunc("/api/poll/{id}", vote).Methods("POST")
 	log.Fatal(http.ListenAndServe("localhost:8080", router))
 }
